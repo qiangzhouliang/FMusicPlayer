@@ -9,12 +9,13 @@ include_directories(${CMAKE_SOURCE_DIR}/../jniLibs/include)
 link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/${CMAKE_ANDROID_ARCH_ABI})
 
 # src/main/cpp 目录下所有的.cpp 文件都需要编译进来
-#aux_source_directory(${CMAKE_SOURCE_DIR}/*.cpp, SOURCE)
-file(GLOB SOURCE ${CMAKE_SOURCE_DIR}/*.cpp)
+#aux_source_directory(${CMAKE_SOURCE_DIR}/util/*.cpp SRC_LIST)
+file(GLOB SOURCE ${CMAKE_SOURCE_DIR}/util/*.cpp)
 
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
-        native-lib.cpp)
+        native-lib.cpp
+        ${SOURCE})
 
 target_link_libraries(
         # 链接额外的 ffmpeg 的编译
