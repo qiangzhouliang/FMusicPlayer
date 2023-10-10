@@ -11,29 +11,7 @@ DZFFmpeg::DZFFmpeg(DZJNICall *pJinCall, const char *url) {
 }
 
 DZFFmpeg::~DZFFmpeg() {
-    if (pCodecContext != NULL){
-        avcodec_close(pCodecContext);
-        avcodec_free_context(&pCodecContext);
-        pCodecContext == NULL;
-    }
-
-    if (pFormatContext != NULL){
-        avformat_close_input(&pFormatContext);
-        avformat_free_context(pFormatContext);
-        pFormatContext == NULL;
-    }
-
-    if (swrContext != NULL){
-        swr_free(&swrContext);
-        free(swrContext);
-        swrContext = NULL;
-    }
-
-    if (resampleOutBuffer != NULL){
-        free(resampleOutBuffer);
-        resampleOutBuffer = NULL;
-    }
-    avformat_network_deinit();
+    release();
 }
 
 void DZFFmpeg::play() {
@@ -62,7 +40,7 @@ void DZFFmpeg::play() {
         // 2. 需要释放资源
         //return;
         LOGE("format open input error: %s", av_err2str(formatOpenInputRes));
-        //        goto __av_resources_destroy;
+        callPlayerJniError(formatOpenInputRes, av_err2str(formatOpenInputRes));
         return;
     }
 
@@ -70,17 +48,15 @@ void DZFFmpeg::play() {
     formatFindStreamInfoRes = avformat_find_stream_info(pFormatContext, NULL);
     if (formatFindStreamInfoRes < 0){
         LOGE("format find stream info error: %s", av_err2str(formatFindStreamInfoRes));
-        // 这种方式一般不推荐这么写，但的确是方便
-        //        goto __av_resources_destroy;
+        callPlayerJniError(formatFindStreamInfoRes, av_err2str(formatFindStreamInfoRes));
         return;
     }
 
     // 获取音视频及字幕的 stream_index , 以前没有这个函数时，我们一般都是写的 for 循环。
     audioStreamIndex = av_find_best_stream(pFormatContext, AVMediaType::AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
     if (audioStreamIndex < 0){
-        LOGE("find_best_stream error: %s", av_err2str(audioStreamIndex));
-        // 这种方式一般不推荐这么写，但的确是方便
-        //        goto __av_resources_destroy;
+        LOGE("find_best_stream error: %s");
+        callPlayerJniError(FIND_STREAM_ERROR_CODE, "find_best_stream error");
         return;
     }
     // 查找解码器
@@ -88,8 +64,7 @@ void DZFFmpeg::play() {
     pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
     if (pCodec == NULL){
         LOGE("avcodec_find_decoder error");
-        // 这种方式一般不推荐这么写，但的确是方便
-//        goto __av_resources_destroy;
+        callPlayerJniError(CODEC_FIND_DECODER_ERROR_CODE, "avcodec_find_decoder error");
         return;
     }
 
@@ -98,20 +73,20 @@ void DZFFmpeg::play() {
     // 将 参数 拷到 context
     if (pCodecContext == NULL){
         LOGE("avcodec_alloc_context3 error");
-        //        goto __av_resources_destroy;
+        callPlayerJniError(CODEC_ALLOC_CONTEXT_ERROR_CODE, "avcodec_alloc_context3 error");
         return;
     }
     codecParametersToContextRes = avcodec_parameters_to_context(pCodecContext, pCodecParameters);
     if (codecParametersToContextRes < 0){
         LOGE("avcodec_parameters_to_context error: %s", av_err2str(codecParametersToContextRes));
-        //        goto __av_resources_destroy;
+        callPlayerJniError(codecParametersToContextRes, av_err2str(codecParametersToContextRes));
         return;
     }
 
     avcodecOpenRes = avcodec_open2(pCodecContext, pCodec, NULL);
     if (avcodecOpenRes != 0){
         LOGE("avcodec_open2 error: %s", av_err2str(avcodecOpenRes));
-        //        goto __av_resources_destroy;
+        callPlayerJniError(avcodecOpenRes, av_err2str(avcodecOpenRes));
         return;
     }
 
@@ -130,10 +105,12 @@ void DZFFmpeg::play() {
                                     in_ch_layout,  in_sample_fmt, in_sample_rate,0, NULL);
     if (swrContext == NULL){
         // 提示错误
+        callPlayerJniError(SWR_ALLOC_SET_OPTS_ERROR_CODE, "swr_alloc_set_opts error");
         return;
     }
     int swrInitRes = swr_init(swrContext);
     if (swrInitRes < 0){
+        callPlayerJniError(SWR_INIT_ERROR_CODE, "swr_init error");
         return;
     }
 
@@ -194,5 +171,35 @@ void DZFFmpeg::play() {
 }
 
 void DZFFmpeg::callPlayerJniError(int code, char *msg) {
+    // 释放资源
+    release();
 
+    // 回调给 java层
+    pJinCall->callPlayerError(code, msg);
+}
+
+void DZFFmpeg::release() {
+    if (pCodecContext != NULL){
+        avcodec_close(pCodecContext);
+        avcodec_free_context(&pCodecContext);
+        pCodecContext == NULL;
+    }
+
+    if (pFormatContext != NULL){
+        avformat_close_input(&pFormatContext);
+        avformat_free_context(pFormatContext);
+        pFormatContext == NULL;
+    }
+
+    if (swrContext != NULL){
+        swr_free(&swrContext);
+        free(swrContext);
+        swrContext = NULL;
+    }
+
+    if (resampleOutBuffer != NULL){
+        free(resampleOutBuffer);
+        resampleOutBuffer = NULL;
+    }
+    avformat_network_deinit();
 }

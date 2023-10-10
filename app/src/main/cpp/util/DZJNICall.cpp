@@ -5,10 +5,17 @@
 #include "DZJNICall.h"
 #include "DZConstDefine.h"
 
-DZJNICall::DZJNICall(JavaVM *javaVm, JNIEnv *env) : javaVm(javaVm), env(env) {
+DZJNICall::DZJNICall(JavaVM *javaVm, JNIEnv *env, jobject jPlayerObj) {
     this->javaVm = javaVm;
     this->env = env;
+    this->jPlayerObj = jPlayerObj;
+
     initCreateAudioTrack();
+
+//    jclass jPlayerClass = env->FindClass("com/swan/media/SwanPlayer");
+    jclass jPlayerClass = env->GetObjectClass(jPlayerObj);
+    jPlayerErrorMid = env->GetMethodID(jPlayerClass, "onError", "(ILjava/lang/String;)V");
+    LOGE("------------>");
 }
 
 void DZJNICall::initCreateAudioTrack() {
@@ -44,4 +51,9 @@ void DZJNICall::callAudioTrackWrite(jbyteArray audioData, int offsetInBytes, int
 
 DZJNICall::~DZJNICall() {
     env->DeleteLocalRef(jAudioTrackObj);
+}
+
+void DZJNICall::callPlayerError(int code, char *msg) {
+    jstring jMsg = env->NewStringUTF(msg);
+    env->CallVoidMethod(jPlayerObj, jPlayerErrorMid, code, jMsg);
 }

@@ -28,8 +28,8 @@ Java_com_swan_media_SwanPlayer_stringFromJNI(JNIEnv* env,jobject /* this */) {
 }
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_swan_media_SwanPlayer_nPlay(JNIEnv *env, jobject thiz, jstring url_) {
-    pJniCall = new DZJNICall(NULL, env);
+Java_com_swan_media_SwanPlayer_nPlay(JNIEnv *env, jobject jPlayerObj, jstring url_) {
+    pJniCall = new DZJNICall(NULL, env, jPlayerObj);
     const char *url = env->GetStringUTFChars(url_, 0);
     pFFmpeg = new DZFFmpeg(pJniCall, url);
     pFFmpeg->play();
