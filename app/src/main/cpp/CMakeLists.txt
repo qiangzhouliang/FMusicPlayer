@@ -3,7 +3,10 @@ cmake_minimum_required(VERSION 3.22.1)
 project("fmusicplayer")
 
 # 指定引入头文件
+# FFmpeg
 include_directories(${CMAKE_SOURCE_DIR}/../jniLibs/include)
+# 自己的
+include_directories(${CMAKE_SOURCE_DIR}/util)
 
 # 指定共享库目录
 link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/${CMAKE_ANDROID_ARCH_ABI})
