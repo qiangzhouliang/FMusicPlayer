@@ -7,6 +7,8 @@
 
 
 #include "DZJNICall.h"
+#include "DZPacketQueue.h"
+#include "DZPlayerStatus.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -23,8 +25,12 @@ public:
     uint8_t *resampleOutBuffer = NULL;
     DZJNICall *pJinCall = NULL;
     int audioStreamIndex = -1;
+    DZPacketQueue *pPacketQueue = NULL;
+    DZPlayerStatus *pPlayerStatus = NULL;
+
 public:
     DZAudio(int audioStreamIndex, DZJNICall *pJinCall, AVCodecContext *pCodecContext,AVFormatContext *pFormatContext,SwrContext *swrContext);
+    ~DZAudio();
 
 public:
     void play();

@@ -16,17 +16,51 @@ DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall, AVCodecContext *pCod
     this->pFormatContext = pFormatContext;
     this->swrContext = swrContext;
     resampleOutBuffer = static_cast<uint8_t *>(malloc(pCodecContext->frame_size * 2 * 2));
+    pPacketQueue = new DZPacketQueue();
+    pPlayerStatus = new DZPlayerStatus();
 }
 
+// 播放线程
 void* threadPlay(void* context){
-    DZAudio* pFFmpeg = static_cast<DZAudio *>(context);
+    DZAudio* pAudio = static_cast<DZAudio *>(context);
     // 创建播放OpenSLES
-    pFFmpeg->initCreateOpenSLES();
+    pAudio->initCreateOpenSLES();
+    return 0;
+}
+
+// 解码放数据线程
+void* threadReadPacket(void* context){
+    DZAudio* pAudio = static_cast<DZAudio *>(context);
+    while (pAudio->pPlayerStatus != NULL && !pAudio->pPlayerStatus->isExit){
+        // 读取每一帧
+        AVPacket *pPacket = av_packet_alloc();
+        if (av_read_frame(pAudio->pFormatContext, pPacket) >= 0){
+            if (pPacket->stream_index == pAudio->audioStreamIndex){ // 处理音频
+                pAudio->pPacketQueue->push(pPacket);
+            } else {
+                // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
+                av_packet_free(&pPacket);
+            }
+        } else {
+            // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
+            av_packet_free(&pPacket);
+            // 睡眠一下，尽量不去消耗 cpu 的资源,也可以退出销毁这个线程
+            //break;
+        }
+    }
+
+
     return 0;
 }
 
 void DZAudio::play() {
+    // 一个线程去读取 packet
+    pthread_t decodePacketThreadT;
+    pthread_create(&decodePacketThreadT, NULL, threadReadPacket, this);
+    pthread_detach(decodePacketThreadT);
+
     // 创建一个线程去播放，多线程编解码边播放
+    // 一个线程去解码播放
     pthread_t playThreadT;
     pthread_create(&playThreadT, NULL, threadPlay, this);
     pthread_detach(playThreadT);
@@ -35,9 +69,9 @@ void DZAudio::play() {
 // this callback handler is called every time a buffer finishes playing
 void playerCallback(SLAndroidSimpleBufferQueueItf caller, void *context){
     // 回调函数，循环
-    DZAudio *pFFmpeg = static_cast<DZAudio *>(context);
-    int dataSize = pFFmpeg->resampleAudio();
-    (*caller)->Enqueue(caller, pFFmpeg->resampleOutBuffer, dataSize);
+    DZAudio *pAudio = static_cast<DZAudio *>(context);
+    int dataSize = pAudio->resampleAudio();
+    (*caller)->Enqueue(caller, pAudio->resampleOutBuffer, dataSize);
 }
 
 void DZAudio::initCreateOpenSLES() {
@@ -110,27 +144,26 @@ void DZAudio::initCreateOpenSLES() {
 int DZAudio::resampleAudio(){
     int dataSize = 0;
     // 读取每一帧
-    AVPacket *pPacket = av_packet_alloc();
+    AVPacket *pPacket = NULL;
     AVFrame *pFrame = av_frame_alloc();
-    while (av_read_frame(pFormatContext, pPacket) >= 0){
-        if (pPacket->stream_index == audioStreamIndex){ // 处理音频
-            // packet 包，是压缩数据，解码成 pcm 数据
-            int codecSendPacketRes = avcodec_send_packet(pCodecContext, pPacket);
-            if (codecSendPacketRes == 0){
-                // 获取每一帧数据
-                int codecReceiveFrameRes = avcodec_receive_frame(pCodecContext, pFrame);
-                if (codecReceiveFrameRes == 0){
-                    // AVPacket -> AVFrame ,没解码的 -> 解码好的
-                    LOGE("解码第 音频 帧");
-                    // 调用重采样的方法,对音频数据重新进行采样，返回值是返回重采样的个数，也就是 pFrame->nb_samples
-                    dataSize = swr_convert(swrContext, &resampleOutBuffer, pFrame->nb_samples,
-                                           (const uint8_t **)pFrame->data, pFrame->nb_samples);
-                    // write 写到缓冲区 pFrame.data -> javabyte
-                    // size 多大，装 pcm 数据
-                    // 立体声 * 2，16位 * 2
-                    dataSize = dataSize * 2 * 2;
-                    break;
-                }
+    while (pPlayerStatus != NULL && !pPlayerStatus->isExit){
+        pPacket = pPacketQueue->pop();
+        // packet 包，是压缩数据，解码成 pcm 数据
+        int codecSendPacketRes = avcodec_send_packet(pCodecContext, pPacket);
+        if (codecSendPacketRes == 0){
+            // 获取每一帧数据
+            int codecReceiveFrameRes = avcodec_receive_frame(pCodecContext, pFrame);
+            if (codecReceiveFrameRes == 0){
+                // AVPacket -> AVFrame ,没解码的 -> 解码好的
+                LOGE("解码第 音频 帧");
+                // 调用重采样的方法,对音频数据重新进行采样，返回值是返回重采样的个数，也就是 pFrame->nb_samples
+                dataSize = swr_convert(swrContext, &resampleOutBuffer, pFrame->nb_samples,
+                                       (const uint8_t **)pFrame->data, pFrame->nb_samples);
+                // write 写到缓冲区 pFrame.data -> javabyte
+                // size 多大，装 pcm 数据
+                // 立体声 * 2，16位 * 2
+                dataSize = dataSize * 2 * 2;
+                break;
             }
         }
         // 解引用
@@ -141,4 +174,22 @@ int DZAudio::resampleAudio(){
     av_packet_free(&pPacket);
     av_frame_free(&pFrame);
     return dataSize;
+}
+
+DZAudio::~DZAudio() {
+    if (pPacketQueue){
+        delete pPacketQueue;
+        pPacketQueue = NULL;
+    }
+
+    if (resampleOutBuffer){
+        free(resampleOutBuffer);
+        resampleOutBuffer = NULL;
+    }
+
+    if (pPlayerStatus){
+        free(pPlayerStatus);
+        pPlayerStatus = NULL;
+    }
+
 }
