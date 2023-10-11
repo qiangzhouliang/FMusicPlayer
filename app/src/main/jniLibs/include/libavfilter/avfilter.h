@@ -238,7 +238,7 @@ typedef struct AVFilter {
      * not need to deallocate the AVFilterContext.priv memory itself.
      *
      * This callback may be called even if @ref AVFilter.init "init" was not
-     * called or failed, so it must be prepared to handle such a situation.
+     * called or failed, so it must be prepare to handle such a situation.
      */
     void (*uninit)(AVFilterContext *ctx);
 

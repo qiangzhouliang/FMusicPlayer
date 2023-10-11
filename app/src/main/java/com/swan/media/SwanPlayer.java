@@ -3,6 +3,7 @@ package com.swan.media;
 import android.text.TextUtils;
 
 import com.swan.media.listener.MediaErrorListener;
+import com.swan.media.listener.MediaPreparedListener;
 
 /**
  * @ClassName SwanPlayer
@@ -22,9 +23,14 @@ public class SwanPlayer {
      */
     private String url;
     private MediaErrorListener mErrorListener;
+    private MediaPreparedListener mPreparedListener;
 
     public void setOnErrorListener(MediaErrorListener mErrorListener) {
         this.mErrorListener = mErrorListener;
+    }
+
+    public void setOnPreparedListener(MediaPreparedListener mPreparedListener) {
+        this.mPreparedListener = mPreparedListener;
     }
 
     /**
@@ -38,18 +44,38 @@ public class SwanPlayer {
         }
     }
 
+    private void onPrepared(){
+        if (mPreparedListener != null){
+            mPreparedListener.onPrepared();
+        }
+    }
+
     public void setDataSource(String url){
         this.url = url;
     }
 
     public void play(){
+        nPlay();
+    }
+
+    private native void nPlay();
+
+    public native String stringFromJNI();
+
+    public void prepare(){
         if (TextUtils.isEmpty(url)){
             throw new NullPointerException("url is null, please call method serDataSource");
         }
-        nPlay(url);
+        nPrepare(url);
     }
 
-    private native void nPlay(String url);
+    public void prepareAsync(){
+        if (TextUtils.isEmpty(url)){
+            throw new NullPointerException("url is null, please call method serDataSource");
+        }
+        nPrepareAsync(url);
+    }
 
-    public native String stringFromJNI();
+    private native void nPrepare(String url);
+    private native void nPrepareAsync(String url);
 }

@@ -6,23 +6,24 @@
 #define FMUSICPLAYER_DZJNICALL_H
 #include <jni.h>
 
+enum ThreadMode{
+    THREAD_CHILD,THREAD_MAIN
+};
+
 class DZJNICall {
 public:
-    jobject jAudioTrackObj;
-    jmethodID jAudioTrackWriteMid;
-    JavaVM *javaVm;
+    JavaVM *javaVM;
     JNIEnv *env;
     jmethodID jPlayerErrorMid;
+    jmethodID jPlayerPreparedMid;
     jobject jPlayerObj;
 public:
     DZJNICall(JavaVM *javaVm, JNIEnv *env, jobject jPlayerObj);
     ~DZJNICall();
-private:
-    void initCreateAudioTrack();
 public:
-    void callAudioTrackWrite(jbyteArray audioData, int offsetInBytes, int sizeInBytes);
+    void callPlayerError(ThreadMode threadMode,int code, char *msg);
 
-    void callPlayerError(int code, char *msg);
+    void callPlayerPrepared(ThreadMode mode);
 };
 
 

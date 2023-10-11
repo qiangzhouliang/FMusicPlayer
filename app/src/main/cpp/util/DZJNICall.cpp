@@ -6,54 +6,64 @@
 #include "DZConstDefine.h"
 
 DZJNICall::DZJNICall(JavaVM *javaVm, JNIEnv *env, jobject jPlayerObj) {
-    this->javaVm = javaVm;
+    this->javaVM = javaVm;
     this->env = env;
-    this->jPlayerObj = jPlayerObj;
+    this->jPlayerObj = env->NewGlobalRef(jPlayerObj);
 
-    initCreateAudioTrack();
 
 //    jclass jPlayerClass = env->FindClass("com/swan/media/SwanPlayer");
     jclass jPlayerClass = env->GetObjectClass(jPlayerObj);
     jPlayerErrorMid = env->GetMethodID(jPlayerClass, "onError", "(ILjava/lang/String;)V");
+    jPlayerPreparedMid = env->GetMethodID(jPlayerClass, "onPrepared", "()V");
     LOGE("------------>");
 }
 
-void DZJNICall::initCreateAudioTrack() {
-    jclass jAudioTrackClass = env->FindClass("android/media/AudioTrack");
-    jmethodID jAudioTrackCMid = env->GetMethodID(jAudioTrackClass, "<init>", "(IIIIII)V");
 
-    //  public static final int STREAM_MUSIC = 3;
-    int streamType = 3;
-    int sampleRateInHz = AUDIO_SAMPLE_RATE;
-    // public static final int CHANNEL_OUT_STEREO = (CHANNEL_OUT_FRONT_LEFT | CHANNEL_OUT_FRONT_RIGHT);
-    int channelConfig = (0x4 | 0x8); // 立体声
-    // public static final int ENCODING_PCM_16BIT = 2;
-    int audioFormat = 2;
-    // getMinBufferSize(int sampleRateInHz, int channelConfig, int audioFormat)
-    jmethodID jGetMinBufferSizeMid = env->GetStaticMethodID(jAudioTrackClass, "getMinBufferSize", "(III)I");
-    int bufferSizeInBytes = env->CallStaticIntMethod(jAudioTrackClass, jGetMinBufferSizeMid, sampleRateInHz, channelConfig, audioFormat);
-    // public static final int MODE_STREAM = 1;
-    int mode = 1;
-    jAudioTrackObj = env->NewObject(jAudioTrackClass, jAudioTrackCMid, streamType, sampleRateInHz, channelConfig, audioFormat, bufferSizeInBytes, mode);
-
-    //  play()
-    jmethodID jPlayMid = env->GetMethodID(jAudioTrackClass, "play", "()V");
-    env->CallVoidMethod(jAudioTrackObj, jPlayMid);
-
-    // write method
-    jAudioTrackWriteMid = env->GetMethodID(jAudioTrackClass, "write", "([BII)I");
-}
-
-void DZJNICall::callAudioTrackWrite(jbyteArray audioData, int offsetInBytes, int sizeInBytes) {
-    // 调用 Write 方法写入数据
-    env->CallIntMethod(jAudioTrackObj, jAudioTrackWriteMid, audioData, offsetInBytes, sizeInBytes);
-}
 
 DZJNICall::~DZJNICall() {
-    env->DeleteLocalRef(jAudioTrackObj);
+    env->DeleteGlobalRef(jPlayerObj);
 }
 
-void DZJNICall::callPlayerError(int code, char *msg) {
-    jstring jMsg = env->NewStringUTF(msg);
-    env->CallVoidMethod(jPlayerObj, jPlayerErrorMid, code, jMsg);
+void DZJNICall::callPlayerError(ThreadMode threadMode,int code, char *msg) {
+    // 子线程用不了主线程 jniEnv （native 线程）
+    // 子线程是不共享 jniEnv ，他们有自己所独有的
+    if (threadMode == THREAD_MAIN) {
+        jstring jMsg = env->NewStringUTF(msg);
+        env->CallVoidMethod(jPlayerObj, jPlayerErrorMid, code, jMsg);
+        env->DeleteLocalRef(jMsg);
+    } else if (threadMode == THREAD_CHILD) {
+        // 获取当前线程的 JNIEnv， 通过 JavaVM
+        JNIEnv *env;
+        if (javaVM->AttachCurrentThread(&env, 0) != JNI_OK) {
+            LOGE("get child thread jniEnv error!");
+            return;
+        }
+
+        jstring jMsg = env->NewStringUTF(msg);
+        env->CallVoidMethod(jPlayerObj, jPlayerErrorMid, code, jMsg);
+        env->DeleteLocalRef(jMsg);
+
+        javaVM->DetachCurrentThread();
+    }
+}
+/**
+ * 回调到java层，告诉他准备好了
+ * @param mode
+ */
+void DZJNICall::callPlayerPrepared(ThreadMode threadMode) {
+// 子线程用不了主线程 jniEnv （native 线程）
+    // 子线程是不共享 jniEnv ，他们有自己所独有的
+    if (threadMode == THREAD_MAIN) {
+        env->CallVoidMethod(jPlayerObj, jPlayerPreparedMid);
+    } else if (threadMode == THREAD_CHILD) {
+        // 获取当前线程的 JNIEnv， 通过 JavaVM
+        JNIEnv *env;
+        if (javaVM->AttachCurrentThread(&env, 0) != JNI_OK) {
+            LOGE("get child thread jniEnv error!");
+            return;
+        }
+
+        env->CallVoidMethod(jPlayerObj, jPlayerPreparedMid);
+        javaVM->DetachCurrentThread();
+    }
 }

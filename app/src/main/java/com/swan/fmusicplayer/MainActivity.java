@@ -30,13 +30,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void playMusic(){
-        File mMusicFile = new File(getApplication().getFilesDir().getPath()+"/test1.mp3");
+        File mMusicFile = new File(getApplication().getFilesDir().getPath()+"/test.mp3");
         swanPlayer.setDataSource(mMusicFile.getAbsolutePath());
         swanPlayer.setOnErrorListener((code, msg) -> {
             Log.e(TAG, "error code:"+code+"  ==>  error msg:"+msg);
             // java的逻辑代码
         });
-        swanPlayer.play();
+        swanPlayer.setOnPreparedListener(() -> {
+            Log.e(TAG, "准备完毕");
+            swanPlayer.play();
+        });
+        swanPlayer.prepareAsync();
     }
 
 }
