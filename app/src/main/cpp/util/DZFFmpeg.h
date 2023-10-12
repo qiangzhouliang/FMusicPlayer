@@ -20,6 +20,7 @@ public:
     char *url = NULL;
     DZJNICall *pJinCall = NULL;
     DZAudio *pAudio = NULL;
+    DZPlayerStatus *pPlayerStatus = NULL;
 public:
     DZFFmpeg(DZJNICall *pJinCall, const char *url);
     ~DZFFmpeg();

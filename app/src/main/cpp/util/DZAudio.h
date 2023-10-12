@@ -9,27 +9,22 @@
 #include "DZJNICall.h"
 #include "DZPacketQueue.h"
 #include "DZPlayerStatus.h"
+#include "DZMedia.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libswresample/swresample.h"
 }
 
-class DZAudio {
+class DZAudio : public DZMedia{
 public:
-    AVFormatContext *pFormatContext = NULL;
-    AVCodecContext *pCodecContext = NULL;
     // 重采样
     SwrContext *swrContext = NULL;
     // 重采样缓存数据
     uint8_t *resampleOutBuffer = NULL;
-    DZJNICall *pJinCall = NULL;
-    int audioStreamIndex = -1;
-    DZPacketQueue *pPacketQueue = NULL;
-    DZPlayerStatus *pPlayerStatus = NULL;
 
 public:
-    DZAudio(int audioStreamIndex, DZJNICall *pJinCall,AVFormatContext *pFormatContext);
+    DZAudio(int audioStreamIndex, DZJNICall *pJinCall,DZPlayerStatus *pPlayerStatus);
     ~DZAudio();
 
 public:
@@ -39,9 +34,8 @@ public:
 
     int resampleAudio();
 
-    void analysisStream(ThreadMode threadMode, AVStream **streams);
+    void privateAnalysisStream(ThreadMode threadMode, AVFormatContext *pFormatContext);
 
-    void callPlayerJniError(ThreadMode threadMode,int code, char *msg);
 
     void release();
 };

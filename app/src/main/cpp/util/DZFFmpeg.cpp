@@ -13,13 +13,45 @@ DZFFmpeg::DZFFmpeg(DZJNICall *pJinCall, const char *url) {
     // 赋值一份 url，因为怕外面方法结束销毁 url
     this->url = static_cast<char *>(malloc(strlen(url) + 1));
     memcpy(this->url, url, strlen(url)+1);
+
+    pPlayerStatus = new DZPlayerStatus();
 }
 
 DZFFmpeg::~DZFFmpeg() {
     release();
 }
 
+// 解码放数据线程
+void* threadReadPacket(void* context){
+    DZFFmpeg* pFFmpeg = static_cast<DZFFmpeg *>(context);
+    while (pFFmpeg->pPlayerStatus != NULL && !pFFmpeg->pPlayerStatus->isExit){
+        // 读取每一帧
+        AVPacket *pPacket = av_packet_alloc();
+        if (av_read_frame(pFFmpeg->pFormatContext, pPacket) >= 0){
+            if (pPacket->stream_index == pFFmpeg->pAudio->streamIndex){ // 处理音频
+                pFFmpeg->pAudio->pPacketQueue->push(pPacket);
+            } else {
+                // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
+                av_packet_free(&pPacket);
+            }
+        } else {
+            // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
+            av_packet_free(&pPacket);
+            // 睡眠一下，尽量不去消耗 cpu 的资源,也可以退出销毁这个线程
+            //break;
+        }
+    }
+
+
+    return 0;
+}
+
 void DZFFmpeg::play() {
+    // 一个线程去读取 packet
+    pthread_t decodePacketThreadT;
+    pthread_create(&decodePacketThreadT, NULL, threadReadPacket, this);
+    pthread_detach(decodePacketThreadT);
+
     if (pAudio != NULL){
         pAudio->play();
     }
@@ -39,6 +71,11 @@ void DZFFmpeg::release() {
         avformat_close_input(&pFormatContext);
         avformat_free_context(pFormatContext);
         pFormatContext == NULL;
+    }
+
+    if (pPlayerStatus != NULL){
+        delete(&pPlayerStatus);
+        pPlayerStatus == NULL;
     }
 
     avformat_network_deinit();
@@ -105,8 +142,8 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
     }
 
     // 不是我的事我不干，但是也不要想的过于复杂
-    pAudio = new DZAudio(audioStreamIndex, pJinCall, pFormatContext);
-    pAudio->analysisStream(threadMode, pFormatContext->streams);
+    pAudio = new DZAudio(audioStreamIndex, pJinCall, pPlayerStatus);
+    pAudio->analysisStream(threadMode, pFormatContext);
 
     /*// 1s 44100 点 2通道，2字节 => 44100 * 2 *2
     // 1帧不是1s，pFrame->nb_sampples 点

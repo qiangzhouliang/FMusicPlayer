@@ -8,13 +8,9 @@
 #include "DZAudio.h"
 #include "DZConstDefine.h"
 
-DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall,AVFormatContext *pFormatContext) {
-    this->audioStreamIndex = audioStreamIndex;
-    this->pJinCall = pJinCall;
-    this->pFormatContext = pFormatContext;
+DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall,DZPlayerStatus *pPlayerStatus )
+    : DZMedia(audioStreamIndex, pJinCall, pPlayerStatus) {
 
-    pPacketQueue = new DZPacketQueue();
-    pPlayerStatus = new DZPlayerStatus();
 }
 
 // 播放线程
@@ -25,37 +21,7 @@ void* threadPlay(void* context){
     return 0;
 }
 
-// 解码放数据线程
-void* threadReadPacket(void* context){
-    DZAudio* pAudio = static_cast<DZAudio *>(context);
-    while (pAudio->pPlayerStatus != NULL && !pAudio->pPlayerStatus->isExit){
-        // 读取每一帧
-        AVPacket *pPacket = av_packet_alloc();
-        if (av_read_frame(pAudio->pFormatContext, pPacket) >= 0){
-            if (pPacket->stream_index == pAudio->audioStreamIndex){ // 处理音频
-                pAudio->pPacketQueue->push(pPacket);
-            } else {
-                // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
-                av_packet_free(&pPacket);
-            }
-        } else {
-            // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
-            av_packet_free(&pPacket);
-            // 睡眠一下，尽量不去消耗 cpu 的资源,也可以退出销毁这个线程
-            //break;
-        }
-    }
-
-
-    return 0;
-}
-
 void DZAudio::play() {
-    // 一个线程去读取 packet
-    pthread_t decodePacketThreadT;
-    pthread_create(&decodePacketThreadT, NULL, threadReadPacket, this);
-    pthread_detach(decodePacketThreadT);
-
     // 创建一个线程去播放，多线程编解码边播放
     // 一个线程去解码播放
     pthread_t playThreadT;
@@ -181,39 +147,8 @@ DZAudio::~DZAudio() {
  * @param threadMode
  * @param streams
  */
-void DZAudio::analysisStream(ThreadMode threadMode, AVStream **streams) {
-    // 查找解码器
-    AVCodecParameters *pCodecParameters = streams[audioStreamIndex]->codecpar;
-    AVCodec *pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
-    if (pCodec == NULL){
-        LOGE("avcodec_find_decoder error");
-        callPlayerJniError(threadMode,CODEC_FIND_DECODER_ERROR_CODE, "avcodec_find_decoder error");
-        return;
-    }
+void DZAudio::privateAnalysisStream(ThreadMode threadMode, AVFormatContext *pFormatContext) {
 
-    // 打开解码器
-    pCodecContext = avcodec_alloc_context3(pCodec);
-    // 将 参数 拷到 context
-    if (pCodecContext == NULL){
-        LOGE("avcodec_alloc_context3 error");
-        callPlayerJniError(threadMode,CODEC_ALLOC_CONTEXT_ERROR_CODE, "avcodec_alloc_context3 error");
-        return;
-    }
-    int codecParametersToContextRes = avcodec_parameters_to_context(pCodecContext, pCodecParameters);
-    if (codecParametersToContextRes < 0){
-        LOGE("avcodec_parameters_to_context error: %s", av_err2str(codecParametersToContextRes));
-        callPlayerJniError(threadMode,codecParametersToContextRes, av_err2str(codecParametersToContextRes));
-        return;
-    }
-
-    int avcodecOpenRes = avcodec_open2(pCodecContext, pCodec, NULL);
-    if (avcodecOpenRes != 0){
-        LOGE("avcodec_open2 error: %s", av_err2str(avcodecOpenRes));
-        callPlayerJniError(threadMode,avcodecOpenRes, av_err2str(avcodecOpenRes));
-        return;
-    }
-
-    LOGE("采样率：%d, 声道：%d", pCodecParameters->sample_rate,pCodecParameters->channels);
     // -----------重采样---srart------------------------
     // 设置重采样的参数
     int64_t out_ch_layout = AV_CH_LAYOUT_STEREO;   // 输出通道
@@ -238,41 +173,15 @@ void DZAudio::analysisStream(ThreadMode threadMode, AVStream **streams) {
     // -----------重采样---end------------------------
 }
 
-void DZAudio::callPlayerJniError(ThreadMode threadMode,int code, char *msg) {
-    // 释放资源
-    release();
 
-    // 回调给 java层
-    pJinCall->callPlayerError(threadMode,code, msg);
-}
 
 void DZAudio::release() {
-    if (pPacketQueue){
-        delete pPacketQueue;
-        pPacketQueue = NULL;
-    }
 
     if (resampleOutBuffer){
         free(resampleOutBuffer);
         resampleOutBuffer = NULL;
     }
 
-    if (pPlayerStatus){
-        free(pPlayerStatus);
-        pPlayerStatus = NULL;
-    }
-
-    if (pCodecContext != NULL){
-        avcodec_close(pCodecContext);
-        avcodec_free_context(&pCodecContext);
-        pCodecContext == NULL;
-    }
-
-    if (pFormatContext != NULL){
-        avformat_close_input(&pFormatContext);
-        avformat_free_context(pFormatContext);
-        pFormatContext == NULL;
-    }
 
     if (swrContext != NULL){
         swr_free(&swrContext);
