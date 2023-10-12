@@ -18,6 +18,7 @@ file(GLOB SOURCE ${CMAKE_SOURCE_DIR}/util/*.cpp)
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
         native-lib.cpp
+        video-player.cpp
         ${SOURCE})
 
 target_link_libraries(

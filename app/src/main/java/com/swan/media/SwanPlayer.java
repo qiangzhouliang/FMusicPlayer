@@ -55,6 +55,9 @@ public class SwanPlayer {
     }
 
     public void play(){
+        if (TextUtils.isEmpty(url)){
+            throw new NullPointerException("url is null, please call method serDataSource");
+        }
         nPlay();
     }
 
