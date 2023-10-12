@@ -8,14 +8,11 @@
 #include "DZAudio.h"
 #include "DZConstDefine.h"
 
-DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall, AVCodecContext *pCodecContext,
-                 AVFormatContext *pFormatContext,SwrContext *swrContext) {
+DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall,AVFormatContext *pFormatContext) {
     this->audioStreamIndex = audioStreamIndex;
     this->pJinCall = pJinCall;
-    this->pCodecContext = pCodecContext;
     this->pFormatContext = pFormatContext;
-    this->swrContext = swrContext;
-    resampleOutBuffer = static_cast<uint8_t *>(malloc(pCodecContext->frame_size * 2 * 2));
+
     pPacketQueue = new DZPacketQueue();
     pPlayerStatus = new DZPlayerStatus();
 }
@@ -177,6 +174,79 @@ int DZAudio::resampleAudio(){
 }
 
 DZAudio::~DZAudio() {
+    release();
+}
+/**
+ * 分析视频流
+ * @param threadMode
+ * @param streams
+ */
+void DZAudio::analysisStream(ThreadMode threadMode, AVStream **streams) {
+    // 查找解码器
+    AVCodecParameters *pCodecParameters = streams[audioStreamIndex]->codecpar;
+    AVCodec *pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
+    if (pCodec == NULL){
+        LOGE("avcodec_find_decoder error");
+        callPlayerJniError(threadMode,CODEC_FIND_DECODER_ERROR_CODE, "avcodec_find_decoder error");
+        return;
+    }
+
+    // 打开解码器
+    pCodecContext = avcodec_alloc_context3(pCodec);
+    // 将 参数 拷到 context
+    if (pCodecContext == NULL){
+        LOGE("avcodec_alloc_context3 error");
+        callPlayerJniError(threadMode,CODEC_ALLOC_CONTEXT_ERROR_CODE, "avcodec_alloc_context3 error");
+        return;
+    }
+    int codecParametersToContextRes = avcodec_parameters_to_context(pCodecContext, pCodecParameters);
+    if (codecParametersToContextRes < 0){
+        LOGE("avcodec_parameters_to_context error: %s", av_err2str(codecParametersToContextRes));
+        callPlayerJniError(threadMode,codecParametersToContextRes, av_err2str(codecParametersToContextRes));
+        return;
+    }
+
+    int avcodecOpenRes = avcodec_open2(pCodecContext, pCodec, NULL);
+    if (avcodecOpenRes != 0){
+        LOGE("avcodec_open2 error: %s", av_err2str(avcodecOpenRes));
+        callPlayerJniError(threadMode,avcodecOpenRes, av_err2str(avcodecOpenRes));
+        return;
+    }
+
+    LOGE("采样率：%d, 声道：%d", pCodecParameters->sample_rate,pCodecParameters->channels);
+    // -----------重采样---srart------------------------
+    // 设置重采样的参数
+    int64_t out_ch_layout = AV_CH_LAYOUT_STEREO;   // 输出通道
+    enum AVSampleFormat out_sample_fmt = AVSampleFormat::AV_SAMPLE_FMT_S16; // 输出格式
+    int out_sample_rate = AUDIO_SAMPLE_RATE;
+    int64_t in_ch_layout = pCodecContext->channels;
+    enum AVSampleFormat in_sample_fmt = pCodecContext->sample_fmt;
+    int in_sample_rate = pCodecContext->sample_rate;
+    swrContext = swr_alloc_set_opts(NULL, out_ch_layout, out_sample_fmt, out_sample_rate,
+                                    in_ch_layout,  in_sample_fmt, in_sample_rate,0, NULL);
+    if (swrContext == NULL){
+        // 提示错误
+        callPlayerJniError(threadMode,SWR_ALLOC_SET_OPTS_ERROR_CODE, "swr_alloc_set_opts error");
+        return;
+    }
+    int swrInitRes = swr_init(swrContext);
+    if (swrInitRes < 0){
+        callPlayerJniError(threadMode,SWR_INIT_ERROR_CODE, "swr_init error");
+        return;
+    }
+    resampleOutBuffer = static_cast<uint8_t *>(malloc(pCodecContext->frame_size * 2 * 2));
+    // -----------重采样---end------------------------
+}
+
+void DZAudio::callPlayerJniError(ThreadMode threadMode,int code, char *msg) {
+    // 释放资源
+    release();
+
+    // 回调给 java层
+    pJinCall->callPlayerError(threadMode,code, msg);
+}
+
+void DZAudio::release() {
     if (pPacketQueue){
         delete pPacketQueue;
         pPacketQueue = NULL;
@@ -190,6 +260,24 @@ DZAudio::~DZAudio() {
     if (pPlayerStatus){
         free(pPlayerStatus);
         pPlayerStatus = NULL;
+    }
+
+    if (pCodecContext != NULL){
+        avcodec_close(pCodecContext);
+        avcodec_free_context(&pCodecContext);
+        pCodecContext == NULL;
+    }
+
+    if (pFormatContext != NULL){
+        avformat_close_input(&pFormatContext);
+        avformat_free_context(pFormatContext);
+        pFormatContext == NULL;
+    }
+
+    if (swrContext != NULL){
+        swr_free(&swrContext);
+        free(swrContext);
+        swrContext = NULL;
     }
 
 }

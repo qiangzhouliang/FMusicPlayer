@@ -34,22 +34,11 @@ void DZFFmpeg::callPlayerJniError(ThreadMode threadMode,int code, char *msg) {
 }
 
 void DZFFmpeg::release() {
-    if (pCodecContext != NULL){
-        avcodec_close(pCodecContext);
-        avcodec_free_context(&pCodecContext);
-        pCodecContext == NULL;
-    }
 
     if (pFormatContext != NULL){
         avformat_close_input(&pFormatContext);
         avformat_free_context(pFormatContext);
         pFormatContext == NULL;
-    }
-
-    if (swrContext != NULL){
-        swr_free(&swrContext);
-        free(swrContext);
-        swrContext = NULL;
     }
 
     avformat_network_deinit();
@@ -87,10 +76,6 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
 
     int formatOpenInputRes = 0; // 0 成功，非0 不成功
     int formatFindStreamInfoRes = 0; // >= 0 成功
-    AVCodecParameters *pCodecParameters;
-    AVCodec *pCodec = NULL;
-    int codecParametersToContextRes = -1;
-    int avcodecOpenRes = -1;
 
     // 函数会读文件头，对 mp4 文件而言，它会解析所有的 box。但它知识把读到的结果保存在对应的数据结构下
     formatOpenInputRes = avformat_open_input(&pFormatContext, url, NULL, NULL);
@@ -118,61 +103,11 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
         callPlayerJniError(threadMode,FIND_STREAM_ERROR_CODE, "find_best_stream error");
         return;
     }
-    // 查找解码器
-    pCodecParameters = pFormatContext->streams[audioStreamIndex]->codecpar;
-    pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
-    if (pCodec == NULL){
-        LOGE("avcodec_find_decoder error");
-        callPlayerJniError(threadMode,CODEC_FIND_DECODER_ERROR_CODE, "avcodec_find_decoder error");
-        return;
-    }
 
-    // 打开解码器
-    pCodecContext = avcodec_alloc_context3(pCodec);
-    // 将 参数 拷到 context
-    if (pCodecContext == NULL){
-        LOGE("avcodec_alloc_context3 error");
-        callPlayerJniError(threadMode,CODEC_ALLOC_CONTEXT_ERROR_CODE, "avcodec_alloc_context3 error");
-        return;
-    }
-    codecParametersToContextRes = avcodec_parameters_to_context(pCodecContext, pCodecParameters);
-    if (codecParametersToContextRes < 0){
-        LOGE("avcodec_parameters_to_context error: %s", av_err2str(codecParametersToContextRes));
-        callPlayerJniError(threadMode,codecParametersToContextRes, av_err2str(codecParametersToContextRes));
-        return;
-    }
+    // 不是我的事我不干，但是也不要想的过于复杂
+    pAudio = new DZAudio(audioStreamIndex, pJinCall, pFormatContext);
+    pAudio->analysisStream(threadMode, pFormatContext->streams);
 
-    avcodecOpenRes = avcodec_open2(pCodecContext, pCodec, NULL);
-    if (avcodecOpenRes != 0){
-        LOGE("avcodec_open2 error: %s", av_err2str(avcodecOpenRes));
-        callPlayerJniError(threadMode,avcodecOpenRes, av_err2str(avcodecOpenRes));
-        return;
-    }
-
-    LOGE("采样率：%d, 声道：%d", pCodecParameters->sample_rate,pCodecParameters->channels);
-
-
-    // -----------重采样---srart------------------------
-    // 设置重采样的参数
-    int64_t out_ch_layout = AV_CH_LAYOUT_STEREO;   // 输出通道
-    enum AVSampleFormat out_sample_fmt = AVSampleFormat::AV_SAMPLE_FMT_S16; // 输出格式
-    int out_sample_rate = AUDIO_SAMPLE_RATE;
-    int64_t in_ch_layout = pCodecContext->channels;
-    enum AVSampleFormat in_sample_fmt = pCodecContext->sample_fmt;
-    int in_sample_rate = pCodecContext->sample_rate;
-    swrContext = swr_alloc_set_opts(NULL, out_ch_layout, out_sample_fmt, out_sample_rate,
-                                    in_ch_layout,  in_sample_fmt, in_sample_rate,0, NULL);
-    if (swrContext == NULL){
-        // 提示错误
-        callPlayerJniError(threadMode,SWR_ALLOC_SET_OPTS_ERROR_CODE, "swr_alloc_set_opts error");
-        return;
-    }
-    int swrInitRes = swr_init(swrContext);
-    if (swrInitRes < 0){
-        callPlayerJniError(threadMode,SWR_INIT_ERROR_CODE, "swr_init error");
-        return;
-    }
-    pAudio = new DZAudio(audioStreamIndex, pJinCall, pCodecContext, pFormatContext,swrContext);
     /*// 1s 44100 点 2通道，2字节 => 44100 * 2 *2
     // 1帧不是1s，pFrame->nb_sampples 点
     // size是播放指定的大小，是最终输出的大小

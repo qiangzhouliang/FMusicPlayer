@@ -29,7 +29,7 @@ public:
     DZPlayerStatus *pPlayerStatus = NULL;
 
 public:
-    DZAudio(int audioStreamIndex, DZJNICall *pJinCall, AVCodecContext *pCodecContext,AVFormatContext *pFormatContext,SwrContext *swrContext);
+    DZAudio(int audioStreamIndex, DZJNICall *pJinCall,AVFormatContext *pFormatContext);
     ~DZAudio();
 
 public:
@@ -38,6 +38,12 @@ public:
     void initCreateOpenSLES();
 
     int resampleAudio();
+
+    void analysisStream(ThreadMode threadMode, AVStream **streams);
+
+    void callPlayerJniError(ThreadMode threadMode,int code, char *msg);
+
+    void release();
 };
 
 
