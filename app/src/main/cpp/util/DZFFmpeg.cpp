@@ -171,7 +171,7 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
 //        return;
 //    }
 
-    pVideo = new DZVideo(videoStreamIndex, pJinCall, pPlayerStatus);
+    pVideo = new DZVideo(videoStreamIndex, pJinCall, pPlayerStatus, pAudio);
     pVideo->analysisStream(threadMode, pFormatContext);
 
     // 回调到java层，告诉他准备好了

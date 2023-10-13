@@ -118,7 +118,7 @@ int DZAudio::resampleAudio(){
             int codecReceiveFrameRes = avcodec_receive_frame(pCodecContext, pFrame);
             if (codecReceiveFrameRes == 0){
                 // AVPacket -> AVFrame ,没解码的 -> 解码好的
-                LOGE("解码第 音频 帧");
+//                LOGE("解码第 音频 帧");
                 // 调用重采样的方法,对音频数据重新进行采样，返回值是返回重采样的个数，也就是 pFrame->nb_samples
                 dataSize = swr_convert(swrContext, &resampleOutBuffer, pFrame->nb_samples,
                                        (const uint8_t **)pFrame->data, pFrame->nb_samples);
@@ -126,6 +126,14 @@ int DZAudio::resampleAudio(){
                 // size 多大，装 pcm 数据
                 // 立体声 * 2，16位 * 2
                 dataSize = dataSize * 2 * 2;
+
+                // 设置当前时间，方便回调进度给Java，方便视频同步音频
+                double times = av_frame_get_best_effort_timestamp(pFrame) * av_q2d(timeBase); // s
+                if (times > currentTime){
+                    currentTime = times;
+                }
+
+
                 break;
             }
         }

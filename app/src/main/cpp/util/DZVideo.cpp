@@ -10,8 +10,9 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
-DZVideo::DZVideo(int videoStreamIndex, DZJNICall *pJinCall, DZPlayerStatus *pPlayerStatus) : DZMedia(
+DZVideo::DZVideo(int videoStreamIndex, DZJNICall *pJinCall, DZPlayerStatus *pPlayerStatus,DZAudio *pAudio) : DZMedia(
     videoStreamIndex, pJinCall, pPlayerStatus) {
+    this->pAudio = pAudio;
 }
 
 DZVideo::~DZVideo() {
@@ -49,7 +50,7 @@ void* threadPlayVideo(void* context){
             int codecReceiveFrameRes = avcodec_receive_frame(pVideo->pCodecContext, pFrame);
             if (codecReceiveFrameRes == 0){
                 // AVPacket -> AVFrame ,没解码的 -> 解码好的
-                LOGE("解码第 音频 帧");
+//                LOGE("解码第 音频 帧");
                 // 渲染，显示 OpenGLES（高效，硬件支持），SurfaceView
                 // 硬件加速和不加速有什么区别？cpu 主要是用于计算，gpu 图形支持（依赖于硬件）
 
@@ -57,6 +58,10 @@ void* threadPlayVideo(void* context){
                 // 假设拿到了 转换后的 RGBA 的 data 数据，如何渲染，把数据推到缓冲区
                 sws_scale(pVideo->pSwsContext,(const uint8_t *const *)pFrame->data,pFrame->linesize,0, pVideo->pCodecContext->height,
                           pVideo->pRgbaFrame->data, pVideo->pRgbaFrame->linesize);
+                // 在播放之前，判断一下需要休眠多久
+                double frameSleepTime = pVideo->getFrameSleepTime(pFrame);
+                LOGE("睡眠时间：%d", frameSleepTime);
+                av_usleep(frameSleepTime * 1000000);
                 // 把数据推到缓冲区
                 ANativeWindow_lock(pNativeWindow, &outBuffer, NULL);
                 memcpy(outBuffer.bits, pVideo->pFrameBuffer,pVideo->frameSize);
@@ -90,6 +95,13 @@ void DZVideo::privateAnalysisStream(ThreadMode threadMode, AVFormatContext *pFor
                                              pCodecContext->height, 1);
     pFrameBuffer = (uint8_t*)malloc(frameSize);
     av_image_fill_arrays(pRgbaFrame->data, pRgbaFrame->linesize,pFrameBuffer, AV_PIX_FMT_RGBA, pCodecContext->width,pCodecContext->height, WINDOW_FORMAT_RGBA_8888);
+
+    int num = pFormatContext->streams[streamIndex]->avg_frame_rate.num;
+    int den = pFormatContext->streams[streamIndex]->avg_frame_rate.den;
+    if (den != 0 && num != 0){
+        // 25 / 1
+        defaultDelayTime = 1.0f * den / num;
+    }
 
 }
 
@@ -130,4 +142,42 @@ void DZVideo::setSurface(jobject surface) {
         return;
     }
     this->surface = env->NewGlobalRef(surface);
+}
+
+
+double DZVideo::getFrameSleepTime(AVFrame *pFrame) {
+    // 拿到自己的当前时间
+    double times = av_frame_get_best_effort_timestamp(pFrame) * av_q2d(timeBase); // s
+    if (times > currentTime){
+        currentTime = times;
+    }
+    // 计算相差多少秒
+    double diffTime = pAudio->currentTime - currentTime;
+    // 视频快了就慢一点，视频慢了就快一点
+    // 但是尽量把时间控制在视频的帧率时间范围左右 1/24 0.04  1/30 0.033
+
+    // 第一次控制 0.016s 到 -0.016s
+    if (diffTime > 0.016 || diffTime < -0.016){
+        if (diffTime > 0.016){ // 视频快了
+            delayTime = delayTime * 2 / 3;
+        } else if (diffTime < 0.016){
+            delayTime = delayTime * 3 / 2;
+        }
+
+        // 第二次控制 defaultDelayTime * 2 / 3 到 defaultDelayTime * 3 / 2
+        if (delayTime < defaultDelayTime / 2){
+            delayTime = defaultDelayTime * 2 / 3;
+        } else if (delayTime > defaultDelayTime * 2){
+            delayTime = defaultDelayTime * 3 / 2;
+        }
+    }
+
+    // 第三次控制 ，那这基本是异常情况了
+    if (diffTime >= 0.25){
+        delayTime = 0;
+    } else if (diffTime <= -0.25){
+        delayTime = defaultDelayTime * 2;
+    }
+    //假设1秒钟25帧，不出意外情况，delayTime 是 0.02 , 0.04 , 0.06
+    return delayTime;
 }
