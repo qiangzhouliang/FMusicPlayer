@@ -72,3 +72,14 @@ Java_com_swan_media_SwanPlayer_nPrepareAsync(JNIEnv *env, jobject jPlayerObj, js
     pFFmpeg->prepareAsync();
     env->ReleaseStringUTFChars(url_, url);
 }
+
+/**
+ * 创建 surface
+ */
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_swan_media_SwanPlayer_setSurface(JNIEnv *env, jobject thiz, jobject surface) {
+    if (pFFmpeg != NULL){
+        pFFmpeg->setSurface(surface);
+    }
+}

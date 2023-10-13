@@ -1,6 +1,7 @@
 package com.swan.media;
 
 import android.text.TextUtils;
+import android.view.Surface;
 
 import com.swan.media.listener.MediaErrorListener;
 import com.swan.media.listener.MediaPreparedListener;
@@ -61,10 +62,6 @@ public class SwanPlayer {
         nPlay();
     }
 
-    private native void nPlay();
-
-    public native String stringFromJNI();
-
     public void prepare(){
         if (TextUtils.isEmpty(url)){
             throw new NullPointerException("url is null, please call method serDataSource");
@@ -78,7 +75,16 @@ public class SwanPlayer {
         }
         nPrepareAsync(url);
     }
+    public void stop() {
+
+    }
+
+    private native void nPlay();
+
+    public native String stringFromJNI();
 
     private native void nPrepare(String url);
     private native void nPrepareAsync(String url);
+
+    public native void setSurface(Surface surface);
 }

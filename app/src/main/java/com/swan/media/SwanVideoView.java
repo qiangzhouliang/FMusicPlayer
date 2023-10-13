@@ -44,11 +44,12 @@ public class SwanVideoView extends SurfaceView implements MediaPreparedListener 
      * 停止方法
      */
     private void stop() {
-
+        mPlayer.stop();
     }
 
     @Override
     public void onPrepared() {
+        mPlayer.setSurface(getHolder().getSurface());
         mPlayer.play();
     }
 }

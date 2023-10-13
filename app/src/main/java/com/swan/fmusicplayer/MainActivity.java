@@ -2,7 +2,6 @@ package com.swan.fmusicplayer;
 
 import android.os.Bundle;
 import android.util.Log;
-import android.view.Surface;
 import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -51,8 +50,8 @@ public class MainActivity extends AppCompatActivity {
         File mVideoFile = new File(getApplication().getFilesDir().getPath()+"/Forrest_Gump_IMAX.mp4");
         //File mMusicFile = new File(getApplication().getFilesDir().getPath()+"/test.mp3");
         mVideoView.player(mVideoFile.getPath());
-        decodeVideo(mVideoFile.getPath(), mVideoView.getHolder().getSurface());
+        //decodeVideo(mVideoFile.getPath(), mVideoView.getHolder().getSurface());
     }
 
-    private native void decodeVideo(String uri, Surface surface);
+    //private native void decodeVideo(String uri, Surface surface);
 }

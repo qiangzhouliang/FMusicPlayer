@@ -30,19 +30,19 @@ void* threadReadPacket(void* context){
         if (av_read_frame(pFFmpeg->pFormatContext, pPacket) >= 0){
             if (pPacket->stream_index == pFFmpeg->pAudio->streamIndex){ // 处理音频
                 pFFmpeg->pAudio->pPacketQueue->push(pPacket);
+            } else if (pFFmpeg->pVideo != NULL && pPacket->stream_index == pFFmpeg->pVideo->streamIndex){
+                pFFmpeg->pVideo->pPacketQueue->push(pPacket);
             } else {
                 // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
                 av_packet_free(&pPacket);
             }
-        } else {
+        }else {
             // 1. 解引用数据 data 2. 销毁 pPacket 结构体内存 3. pPacket = NULL
             av_packet_free(&pPacket);
             // 睡眠一下，尽量不去消耗 cpu 的资源,也可以退出销毁这个线程
             //break;
         }
     }
-
-
     return 0;
 }
 
@@ -54,6 +54,10 @@ void DZFFmpeg::play() {
 
     if (pAudio != NULL){
         pAudio->play();
+    }
+
+    if (pVideo != NULL){
+        pVideo->play();
     }
 }
 
@@ -74,8 +78,18 @@ void DZFFmpeg::release() {
     }
 
     if (pPlayerStatus != NULL){
-        delete(&pPlayerStatus);
+        delete(pPlayerStatus);
         pPlayerStatus == NULL;
+    }
+
+    if (pAudio != NULL){
+        delete(pAudio);
+        pAudio == NULL;
+    }
+
+    if (pVideo != NULL){
+        delete(pVideo);
+        pVideo == NULL;
     }
 
     avformat_network_deinit();
@@ -133,11 +147,11 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
         return;
     }
 
-    // 获取音视频及字幕的 stream_index , 以前没有这个函数时，我们一般都是写的 for 循环。
+    // 查找音频流的 index , 以前没有这个函数时，我们一般都是写的 for 循环。
     int audioStreamIndex = av_find_best_stream(pFormatContext, AVMediaType::AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
     if (audioStreamIndex < 0){
-        LOGE("find_best_stream error: %s");
-        callPlayerJniError(threadMode,FIND_STREAM_ERROR_CODE, "find_best_stream error");
+        LOGE("format audio stream error：");
+        callPlayerJniError(threadMode,FIND_STREAM_ERROR_CODE, "format audio stream error：");
         return;
     }
 
@@ -145,14 +159,31 @@ void DZFFmpeg::prepare(ThreadMode threadMode) {
     pAudio = new DZAudio(audioStreamIndex, pJinCall, pPlayerStatus);
     pAudio->analysisStream(threadMode, pFormatContext);
 
-    /*// 1s 44100 点 2通道，2字节 => 44100 * 2 *2
-    // 1帧不是1s，pFrame->nb_sampples 点
-    // size是播放指定的大小，是最终输出的大小
-    int outChannels = av_get_channel_layout_nb_channels(out_ch_layout); // 输出的通道
-    int dataSize = av_samples_get_buffer_size(NULL,outChannels,
-                                              pCodecContext->frame_size,out_sample_fmt,0);
-    resampleOutBuffer = static_cast<uint8_t *>(malloc(dataSize));*/
-    // -----------重采样---end------------------------
+    // 查找视频流的 index , 以前没有这个函数时，我们一般都是写的 for 循环。
+    int videoStreamIndex = av_find_best_stream(pFormatContext, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+    if (videoStreamIndex < 0){
+        LOGE("format video stream error：");
+        callPlayerJniError(threadMode,FIND_STREAM_ERROR_CODE, "format video stream error：");
+        return;
+    }
+    // 如果没有视频，就直接播放音频
+//    if (videoStreamIndex < 0){
+//        return;
+//    }
+
+    pVideo = new DZVideo(videoStreamIndex, pJinCall, pPlayerStatus);
+    pVideo->analysisStream(threadMode, pFormatContext);
+
     // 回调到java层，告诉他准备好了
     pJinCall->callPlayerPrepared(threadMode);
+}
+
+/**
+ * 创建 surface
+ * @param surface
+ */
+void DZFFmpeg::setSurface(jobject surface) {
+    if (pVideo != NULL){
+        pVideo->setSurface(surface);
+    }
 }

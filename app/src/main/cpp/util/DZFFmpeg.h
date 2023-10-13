@@ -7,6 +7,7 @@
 
 #include "DZJNICall.h"
 #include "DZAudio.h"
+#include "DZVideo.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -19,8 +20,9 @@ public:
     AVFormatContext *pFormatContext = NULL;
     char *url = NULL;
     DZJNICall *pJinCall = NULL;
-    DZAudio *pAudio = NULL;
     DZPlayerStatus *pPlayerStatus = NULL;
+    DZAudio *pAudio = NULL;
+    DZVideo *pVideo = NULL;
 public:
     DZFFmpeg(DZJNICall *pJinCall, const char *url);
     ~DZFFmpeg();
@@ -37,6 +39,7 @@ public:
 
     void release();
 
+    void setSurface(jobject surface);
 };
 
 

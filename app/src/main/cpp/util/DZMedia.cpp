@@ -8,7 +8,6 @@
 DZMedia::DZMedia(int streamIndex, DZJNICall *pJinCall, DZPlayerStatus *pPlayerStatus) : streamIndex(
     streamIndex), pJinCall(pJinCall), pPlayerStatus(pPlayerStatus) {
     pPacketQueue = new DZPacketQueue();
-    pPlayerStatus = new DZPlayerStatus();
 }
 
 DZMedia::~DZMedia() {
@@ -62,9 +61,10 @@ void DZMedia::release() {
         pPacketQueue = NULL;
     }
 
-    if (pPlayerStatus){
-        delete pPlayerStatus;
-        pPlayerStatus = NULL;
+    if (pCodecContext){
+        avcodec_close(pCodecContext);
+        avcodec_free_context(&pCodecContext);
+        pCodecContext = NULL;
     }
 }
 

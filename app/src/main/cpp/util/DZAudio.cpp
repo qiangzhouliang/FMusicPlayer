@@ -14,7 +14,7 @@ DZAudio::DZAudio(int audioStreamIndex, DZJNICall *pJinCall,DZPlayerStatus *pPlay
 }
 
 // 播放线程
-void* threadPlay(void* context){
+void* threadPlayAudio(void* context){
     DZAudio* pAudio = static_cast<DZAudio *>(context);
     // 创建播放OpenSLES
     pAudio->initCreateOpenSLES();
@@ -25,7 +25,7 @@ void DZAudio::play() {
     // 创建一个线程去播放，多线程编解码边播放
     // 一个线程去解码播放
     pthread_t playThreadT;
-    pthread_create(&playThreadT, NULL, threadPlay, this);
+    pthread_create(&playThreadT, NULL, threadPlayAudio, this);
     pthread_detach(playThreadT);
 }
 
@@ -176,7 +176,7 @@ void DZAudio::privateAnalysisStream(ThreadMode threadMode, AVFormatContext *pFor
 
 
 void DZAudio::release() {
-
+    DZMedia::release();
     if (resampleOutBuffer){
         free(resampleOutBuffer);
         resampleOutBuffer = NULL;
